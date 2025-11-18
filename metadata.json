@@ -1,0 +1,5 @@
+{
+  "name": "FGC Shift Finder v1.7",
+  "description": "An application to load, process, and search FGC (Ferrocarrils de la Generalitat de Catalunya) shift, service, and driver data from CSV files.",
+  "requestFramePermissions": []
+}

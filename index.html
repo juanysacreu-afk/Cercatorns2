@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FGC Shift Finder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 400;
+            color: #58595b; /* FGC Gray */
+        }
+        h1, h2, h3, h4, h5, h6, .font-ultrabold {
+             font-family: 'Montserrat', sans-serif;
+             font-weight: 900; /* Ultra Bold */
+             color: #58595b;
+        }
+        .search-results::-webkit-scrollbar,
+        .tabs-scroll-container::-webkit-scrollbar {
+            display: none;
+        }
+        .search-results,
+        .tabs-scroll-container {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .tooltip-container {
+            position: relative;
+            cursor: pointer;
+        }
+        .tooltip-text {
+            visibility: hidden;
+            width: 220px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -110px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: pre-line; /* Changed from nowrap to allow multiline tooltips */
+        }
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0"
+  }
+}
+</script>
+<!-- Load pdf.js globally to be available on the window object -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.mjs" type="module"></script>
+<!-- Load xlsx (SheetJS) globally -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+</body>
+</html>

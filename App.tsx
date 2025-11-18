@@ -1155,19 +1155,14 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
     const shiftStartMinutes = timeToMinutes(shift.iniciTorn);
     const isOvernightShift = timeToMinutes(shift.finalTorn) < shiftStartMinutes;
 
-    // Helper to convert a time string (e.g., "01:15") into a minute value
-    // on a continuous timeline that accounts for the shift crossing midnight.
     const normalizeMinutes = (timeStr: string): number => {
         let minutes = timeToMinutes(timeStr);
-        // If the shift is overnight and the time's minute value is less than the start time's,
-        // it means this time is on the "next day", so we add 24 hours worth of minutes.
         if (isOvernightShift && minutes < shiftStartMinutes) {
             minutes += 24 * 60;
         }
         return minutes;
     };
 
-    // Build a unified itinerary with absolute start/end minutes for accurate "in-progress" checking.
     type ItineraryItem = 
         | { type: 'circulation'; startMinutes: number; endMinutes: number; data: CirculationInShift; }
         | { type: 'interval'; startMinutes: number; endMinutes: number; data: { duration: number; type: 'Descans' | 'Temps' } };
@@ -1175,7 +1170,6 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
     const itinerary: ItineraryItem[] = [];
     let lastKnownTime = shift.iniciTorn;
 
-    // Sort circulations chronologically, correctly handling overnight shifts.
     const sortedCirculations = [...shift.circulations].sort((a, b) => {
         return normalizeMinutes(a.sortida) - normalizeMinutes(b.sortida);
     });
@@ -1209,13 +1203,11 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
         });
     }
 
-    // Convert search time to the same continuous minute timeline.
     let searchMinutes = searchTime.getHours() * 60 + searchTime.getMinutes();
     if (isOvernightShift && searchMinutes < shiftStartMinutes) {
         searchMinutes += 24 * 60;
     }
     
-    // Find the index of the currently active item.
     const activeIndex = itinerary.findIndex(item => 
         searchMinutes >= item.startMinutes && searchMinutes < item.endMinutes
     );
@@ -1227,28 +1219,6 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
         </div>
     );
     
-    const ItineraryInterval = ({ interval, isActive }: { interval: ItineraryItem & { type: 'interval' }, isActive: boolean }) => {
-        const { duration, type } = interval.data;
-        const isDescans = type === 'Descans';
-        const currentTimeStr = minutesToTime(searchMinutes);
-
-        return (
-            <div className={`p-3 border-t border-gray-200 text-center italic ${isDescans ? 'bg-green-100' : 'bg-orange-100'}`}>
-                <div className="flex items-center justify-center">
-                    {isActive && (
-                         <span 
-                            className="w-3 h-3 bg-red-500 rounded-full mr-3 flex-shrink-0 animate-pulse" 
-                            title={`En curs a les ${currentTimeStr}`}
-                        ></span>
-                    )}
-                    <span className={`font-bold ${isDescans ? 'text-green-800' : 'text-orange-800'}`}>
-                        {type}: {minutesToTime(duration)}
-                    </span>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="space-y-6">
             <div className="text-center pb-4 border-b-2 border-gray-200">
@@ -1300,14 +1270,14 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
             
             <div>
                 <h3 className="text-xl font-ultrabold mb-3">Contingut del torn</h3>
-                <div className="rounded-lg border border-gray-200">
-                    <div className="hidden md:flex text-xs font-bold text-gray-500 uppercase bg-gray-100">
-                        <div className="flex-1 p-3">Circulació</div>
-                        <div className="w-24 p-3 text-center">Sortida</div>
-                        <div className="w-24 p-3 text-center">Arribada</div>
-                        <div className="flex-1 p-3 text-center">Cicle</div>
-                        <div className="w-32 p-3 text-center">Unitat</div>
-                        <div className="w-48 p-3 text-center">Llibre d'Itineraris</div>
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className="hidden md:grid grid-cols-[1fr,96px,96px,1fr,128px,192px] text-xs font-bold text-gray-500 uppercase bg-gray-100">
+                        <div className="p-3 text-left">Circulació</div>
+                        <div className="p-3 text-center">Sortida</div>
+                        <div className="p-3 text-center">Arribada</div>
+                        <div className="p-3 text-center">Cicle</div>
+                        <div className="p-3 text-center">Unitat</div>
+                        <div className="p-3 text-center">Llibre d'Itineraris</div>
                     </div>
                     <div>
                         {itinerary.map((item, index) => {
@@ -1315,7 +1285,28 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
                             const currentTimeStr = minutesToTime(searchMinutes);
                             
                             if (item.type === 'interval') {
-                                return <ItineraryInterval key={index} interval={item} isActive={isActive} />;
+                                const { duration, type } = item.data;
+                                const isDescans = type === 'Descans';
+                                
+                                // 'Temps' rows are narrower on desktop and hidden on mobile.
+                                if (!isDescans) {
+                                     return (
+                                        <div key={index} className="hidden md:flex items-center justify-center py-1.5 px-3 border-t border-gray-200 text-center italic bg-orange-100">
+                                            {isActive && <span className="w-3 h-3 bg-red-500 rounded-full mr-3 animate-pulse" title={`En curs a les ${currentTimeStr}`}></span>}
+                                            <span className="font-bold text-orange-800">Temps: {minutesToTime(duration)}</span>
+                                        </div>
+                                    );
+                                }
+                                
+                                // 'Descans' rows are visible on all screen sizes with normal height.
+                                return (
+                                     <div key={index} className="p-3 border-t border-gray-200 text-center italic bg-green-100">
+                                        <div className="flex items-center justify-center">
+                                            {isActive && <span className="w-3 h-3 bg-red-500 rounded-full mr-3 animate-pulse" title={`En curs a les ${currentTimeStr}`}></span>}
+                                            <span className="font-bold text-green-800">Descans: {minutesToTime(duration)}</span>
+                                        </div>
+                                    </div>
+                                );
                             }
                             
                             // Item is a circulation
@@ -1331,13 +1322,9 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
                                 if (circ.observacions && circ.observacions.trim()) {
                                     const obsTrimmed = circ.observacions.trim();
                                     circulationDisplay = `Viatger ${obsTrimmed}`;
-                                    
                                     const match = obsTrimmed.match(/^([a-zA-Z0-9]+)/);
-                                    if (match && match[1]) {
-                                        realCircCodeForButton = match[1];
-                                    } else {
-                                        realCircCodeForButton = '';
-                                    }
+                                    if (match && match[1]) realCircCodeForButton = match[1];
+                                    else realCircCodeForButton = '';
                                 } else {
                                     circulationDisplay = 'Viatger (detalls no disponibles)';
                                     realCircCodeForButton = '';
@@ -1345,51 +1332,73 @@ const TornResult: React.FC<TornResultProps> = ({ shift, drivers, assignments, sh
                             }
                             
                             return (
-                                <div key={index} className="flex flex-col md:flex-row md:items-center p-3 border-t border-gray-200 bg-white">
-                                    <div className="flex-1 mb-2 md:mb-0 flex items-center">
-                                        {isActive && (
-                                            <span 
-                                                className="w-3 h-3 bg-red-500 rounded-full mr-3 flex-shrink-0 animate-pulse" 
-                                                title={`En curs a les ${currentTimeStr}`}
-                                            ></span>
-                                        )}
-                                        <div>
-                                            <span className="font-bold md:hidden">Circulació: </span>
-                                            <span className={`font-ultrabold text-lg ${isViatger ? 'text-blue-600' : 'text-[#58595b]'}`}>
-                                                {circulationDisplay}
-                                            </span>
+                                <div key={index} className="border-t border-gray-200 bg-white">
+                                    {/* --- MOBILE VIEW --- */}
+                                    <div className="p-4 md:hidden">
+                                        <div className="flex items-start mb-3">
+                                            {isActive && <span className="w-3 h-3 bg-red-500 rounded-full mr-3 mt-1.5 flex-shrink-0 animate-pulse" title={`En curs a les ${currentTimeStr}`}></span>}
+                                            <span className={`font-ultrabold text-lg ${isViatger ? 'text-blue-600' : 'text-[#58595b]'}`}>{circulationDisplay}</span>
+                                        </div>
+                                        <div className="pl-6 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                            <div>
+                                                <p className="text-gray-500 font-bold">Sortida</p>
+                                                <p className="font-normal">{circ.sortida}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-500 font-bold">Arribada</p>
+                                                <p className="font-normal">{circ.arribada}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-500 font-bold">Cicle</p>
+                                                <p className="font-normal">{circ.cicle}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-500 font-bold">Unitat</p>
+                                                {trainNum && !isViatger ? (
+                                                    trainPhone ? (
+                                                        <a href={`tel:${trainPhone}`} className="text-blue-600 hover:underline font-bold inline-flex items-center group">
+                                                            <PhoneIcon /> {trainNum}
+                                                        </a>
+                                                    ) : <span className="font-semibold">{trainNum}</span>
+                                                ) : <span className="text-gray-400">-</span>}
+                                            </div>
+                                        </div>
+                                        <div className="pl-6 mt-4">
+                                            <button 
+                                                onClick={() => showPassingTimes(realCircCodeForButton)} 
+                                                className="bg-white text-xs w-full text-[#58595b] font-ultrabold py-2 px-3 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50 flex items-center justify-center whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                                disabled={!realCircCodeForButton}>
+                                               <BookIcon /> Llibre d'Itineraris
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="w-full md:w-24 md:text-center mb-2 md:mb-0">
-                                        <span className="font-bold md:hidden">Sortida: </span>
-                                        <span className="font-normal">{circ.sortida}</span>
-                                    </div>
-                                    <div className="w-full md:w-24 md:text-center mb-2 md:mb-0">
-                                        <span className="font-bold md:hidden">Arribada: </span>
-                                        <span className="font-normal">{circ.arribada}</span>
-                                    </div>
-                                    <div className="flex-1 md:text-center mb-2 md:mb-0">
-                                        <span className="font-bold md:hidden">Cicle: </span>
-                                        <span className="text-sm font-normal">{circ.cicle}</span>
-                                    </div>
-                                    <div className="w-full md:w-32 md:text-center mb-2 md:mb-0">
-                                        <span className="font-bold md:hidden">Unitat: </span>
-                                        {trainNum && !isViatger ? (
-                                            trainPhone ? (
-                                                <a href={`tel:${trainPhone}`} className="text-blue-600 hover:underline font-bold inline-flex items-center group">
-                                                    <PhoneIcon /> {trainNum}
-                                                </a>
-                                            ) : <span className="font-semibold">{trainNum}</span>
-                                        ) : <span className="text-gray-400">-</span>}
-                                    </div>
-                                    <div className="w-full md:w-48 flex md:justify-center">
-                                         <button 
-                                            onClick={() => showPassingTimes(realCircCodeForButton)} 
-                                            className="bg-white text-xs w-full md:w-auto text-[#58595b] font-ultrabold py-2 px-3 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50 flex items-center justify-center whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                                            disabled={!realCircCodeForButton}
-                                        >
-                                           <BookIcon /> Llibre d'Itineraris
-                                        </button>
+
+                                    {/* --- DESKTOP VIEW --- */}
+                                    <div className="hidden md:grid grid-cols-[1fr,96px,96px,1fr,128px,192px] items-center p-3">
+                                        <div className="flex items-center">
+                                            {isActive && <span className="w-3 h-3 bg-red-500 rounded-full mr-3 flex-shrink-0 animate-pulse" title={`En curs a les ${currentTimeStr}`}></span>}
+                                            <span className={`font-ultrabold text-lg ${isViatger ? 'text-blue-600' : 'text-[#58595b]'}`}>{circulationDisplay}</span>
+                                        </div>
+                                        <div className="text-center"><span className="font-normal">{circ.sortida}</span></div>
+                                        <div className="text-center"><span className="font-normal">{circ.arribada}</span></div>
+                                        <div className="text-center"><span className="text-sm font-normal">{circ.cicle}</span></div>
+                                        <div className="text-center">
+                                            {trainNum && !isViatger ? (
+                                                trainPhone ? (
+                                                    <a href={`tel:${trainPhone}`} className="text-blue-600 hover:underline font-bold inline-flex items-center justify-center group">
+                                                        <PhoneIcon /> {trainNum}
+                                                    </a>
+                                                ) : <span className="font-semibold">{trainNum}</span>
+                                            ) : <span className="text-gray-400">-</span>}
+                                        </div>
+                                        <div className="flex justify-center">
+                                             <button 
+                                                onClick={() => showPassingTimes(realCircCodeForButton)} 
+                                                className="bg-white text-xs w-auto text-[#58595b] font-ultrabold py-2 px-3 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50 flex items-center justify-center whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                                disabled={!realCircCodeForButton}>
+                                               <BookIcon /> Llibre d'Itineraris
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -1596,7 +1605,7 @@ interface PresenceBarProps {
     startOffsetMinutes: number;
     maxDuration: number;
     color: string;
-    children: React.ReactNode;
+    children?: React.ReactNode;
     tooltip: string;
     yOffset: string;
     opacity?: string;
@@ -1626,6 +1635,7 @@ interface ComparisonResultViewProps {
 
 const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db }) => {
     const { shift1, shift2, overlaps, intervals1, intervals2, lastCirculation1, lastCirculation2 } = data;
+    const [modalContent, setModalContent] = useState<{ title: string; shift: Shift } | null>(null);
 
     const start1 = timeToMinutes(shift1.iniciTorn);
     const end1 = timeToMinutes(shift1.finalTorn) < start1 ? timeToMinutes(shift1.finalTorn) + 24 * 60 : timeToMinutes(shift1.finalTorn);
@@ -1656,9 +1666,32 @@ const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db })
         PN: '#16a34a', // green-600
     };
     const overlapColor = '#ef4444'; // red-500
+    const btnSecondary = "bg-white text-[#58595b] font-ultrabold py-1 px-3 rounded-lg shadow-sm border-2 border-[#99cc33] transition-transform duration-200 hover:scale-[1.02] hover:bg-gray-50";
+
 
     return (
         <div className="space-y-6">
+             <div>
+                <h4 className="text-lg font-ultrabold mb-4">Resum dels Torns</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[shift1, shift2].map((shift, index) => (
+                        <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-2">
+                            <p><span className="font-bold">Torn:</span> <span className="font-ultrabold text-lg">{shift.id}</span></p>
+                            <p><span className="font-bold">Horari:</span> {shift.iniciTorn} - {shift.finalTorn}</p>
+                            <p><span className="font-bold">Dependència:</span> {shift.dependencia}</p>
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => setModalContent({ title: `Circulacions del Torn ${shift.id}`, shift })}
+                                    className={`${btnSecondary} text-sm`}
+                                >
+                                    Veure Circulacions
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             <div>
                  <h4 className="text-lg font-ultrabold mb-2">Línia de Temps dels Torns</h4>
                  <div className="relative h-20 bg-gray-200 rounded-lg p-2">
@@ -1709,6 +1742,16 @@ const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db })
                             {iv.station}
                         </PresenceBar>
                     ))}
+                    <PresenceBar
+                        key="overlap-bg"
+                        durationMinutes={maxDuration}
+                        startOffsetMinutes={0}
+                        maxDuration={maxDuration}
+                        color="#fee2e2"
+                        yOffset="4.5rem"
+                        opacity="opacity-50"
+                        tooltip="Línia de Coincidències"
+                    />
                     {overlaps.map((o, i) => {
                         const oStart = timeToMinutes(o.start);
                         const oEnd = timeToMinutes(o.end);
@@ -1768,6 +1811,25 @@ const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db })
                     {isReliefPossible() && <p className="font-bold text-blue-800">Possible relleu entre torns a la mateixa estació i hora propera.</p>}
                 </div>
             </div>
+             <Modal
+                isOpen={!!modalContent}
+                onClose={() => setModalContent(null)}
+                title={modalContent?.title || ''}
+            >
+                {modalContent && (
+                    <ul className="space-y-2">
+                        {modalContent.shift.circulations.length > 0 ? modalContent.shift.circulations.map((circ, index) => (
+                             <li key={index} className="bg-gray-100 p-2 rounded flex justify-between">
+                                <div>
+                                    <span className="font-bold">{circ.codi}</span>
+                                    <span className="text-sm text-gray-600 ml-2">({circ.sortida} - {circ.arribada})</span>
+                                </div>
+                                <span className="text-sm font-semibold">{circ.cicle}</span>
+                             </li>
+                        )) : <p>Aquest torn no té circulacions.</p>}
+                    </ul>
+                )}
+            </Modal>
         </div>
     );
 };

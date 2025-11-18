@@ -462,7 +462,7 @@ Only include entries where you can clearly identify both a train code and its co
         }
         
         const drivers = db.drivers.get(foundShift.id);
-        setSearchResults(<CircResult circ={circ} shift={foundShift} cicle={foundCicle} assignments={assignments} drivers={drivers} phonebook={db.phonebook} />);
+        setSearchResults(<CircResult circ={circ} shift={foundShift} cicle={foundCicle} assignments={assignments} drivers={drivers} phonebook={db.phonebook} handleSearchTorn={handleSearchTorn} db={db} />);
     };
 
     const handleSearchCycle = () => {
@@ -470,18 +470,20 @@ Only include entries where you can clearly identify both a train code and its co
         const cycleId = cycleInput;
         const activeShifts = getActiveShifts();
         
-        let circsInCycle: Circulation[] = [];
+        const circsInCycle: { circulation: Circulation, shift: Shift }[] = [];
         for (const shift of activeShifts) {
             for (const circ of shift.circulations) {
                 if (circ.cicle === cycleId) {
                     const circData = db.circulations.get(circ.codi);
-                    if (circData) circsInCycle.push(circData);
+                    if (circData) {
+                        circsInCycle.push({ circulation: circData, shift });
+                    }
                 }
             }
         }
         
-        circsInCycle.sort((a, b) => a.sortida.localeCompare(b.sortida));
-        setSearchResults(<CycleResult cycleId={cycleId} circulations={circsInCycle} assignments={assignments} showPassingTimes={showPassingTimes} />);
+        circsInCycle.sort((a, b) => a.circulation.sortida.localeCompare(b.circulation.sortida));
+        setSearchResults(<CycleResult cycleId={cycleId} circulationsWithShifts={circsInCycle} assignments={assignments} showPassingTimes={showPassingTimes} />);
     };
 
     const handleSearchStation = () => {
@@ -1418,17 +1420,46 @@ interface CircResultProps {
     assignments: Map<string, string>;
     drivers?: Driver[];
     phonebook: Map<string, PhonebookEntry>;
+    handleSearchTorn: (tornId: string) => void;
+    db: Db;
 }
 
-const CircResult: React.FC<CircResultProps> = ({ circ, shift, cicle, assignments, drivers, phonebook }) => {
+const CircResult: React.FC<CircResultProps> = ({ circ, shift, cicle, assignments, drivers, phonebook, handleSearchTorn, db }) => {
     const baseShiftId = getBaseShiftId(shift.id);
+    const btnSecondary = "bg-white text-[#58595b] font-ultrabold py-1 px-3 rounded-lg shadow-sm border-2 border-[#99cc33] transition-transform duration-200 hover:scale-[1.02] hover:bg-gray-50";
+
+    const nextCirculation = useMemo(() => {
+        if (!db || !cicle || !circ || !shift.servei) return null;
+
+        const activeShifts = Array.from(db.shifts.values()).filter(s => s.servei === shift.servei);
+        
+        const allCircsInCycle = activeShifts
+            .flatMap(s => s.circulations.filter(c => c.cicle === cicle));
+
+        if (allCircsInCycle.length <= 1) return null;
+
+        allCircsInCycle.sort((a, b) => a.sortida.localeCompare(b.sortida));
+        const currentIndex = allCircsInCycle.findIndex(c => c.codi === circ.id);
+
+        if (currentIndex !== -1 && currentIndex < allCircsInCycle.length - 1) {
+            return allCircsInCycle[currentIndex + 1];
+        }
+
+        return null;
+    }, [db, cicle, circ.id, shift.servei]);
+
     return (
         <div>
             <h3 className="text-xl font-ultrabold mb-2">Detalls de la Circulació: {circ.id}</h3>
             <div className="mb-4 p-4 bg-gray-100 rounded-lg space-y-2">
                 <p><strong>Línia:</strong> {circ.linia}</p>
                 <p><strong>Recorregut:</strong> {circ.inici} ({circ.sortida}) &rarr; {circ.final} ({circ.arribada})</p>
-                <p><strong>Assignada al Torn:</strong> {shift.id} {baseShiftId !== shift.id && `(${baseShiftId})`}</p>
+                <div className="flex items-center gap-4">
+                     <p><strong>Assignada al Torn:</strong> {shift.id} {baseShiftId !== shift.id && `(${baseShiftId})`}</p>
+                     <button onClick={() => handleSearchTorn(shift.id)} className={`${btnSecondary} text-sm`}>
+                        Veure Torn
+                    </button>
+                </div>
                  {drivers && drivers.length > 0 && (
                     <div>
                         <strong>Maquinistes del Torn:</strong>
@@ -1453,6 +1484,11 @@ const CircResult: React.FC<CircResultProps> = ({ circ, shift, cicle, assignments
                     </div>
                 )}
                 <p><strong>Cicle:</strong> {cicle}</p>
+                {nextCirculation ? (
+                    <p className="text-sm text-gray-700 pl-4"> &hookrightarrow; <span className="font-semibold">Següent:</span> {nextCirculation.codi} a les {nextCirculation.sortida}</p>
+                ) : (
+                    <p className="text-sm text-gray-500 pl-4">&hookrightarrow; Aquesta és l'última del cicle en aquest servei.</p>
+                )}
                 {assignments.has(cicle) && <p><strong>Tren Assignat:</strong> {assignments.get(cicle)}</p>}
             </div>
             <PassingTimesTable circ={circ} />
@@ -1462,31 +1498,98 @@ const CircResult: React.FC<CircResultProps> = ({ circ, shift, cicle, assignments
 
 interface CycleResultProps {
     cycleId: string;
-    circulations: Circulation[];
+    circulationsWithShifts: { circulation: Circulation, shift: Shift }[];
     assignments: Map<string, string>;
     showPassingTimes: (circId: string) => void;
 }
 
-const CycleResult: React.FC<CycleResultProps> = ({ cycleId, circulations, assignments, showPassingTimes }) => {
+const CycleResult: React.FC<CycleResultProps> = ({ cycleId, circulationsWithShifts, assignments, showPassingTimes }) => {
     const trainNum = assignments.get(cycleId);
+    const trainPhone = trainNum ? getTrainPhoneNumber(trainNum) : null;
+
+    if (circulationsWithShifts.length === 0) {
+        return <p className="text-center text-gray-500">No s'han trobat circulacions per al cicle {cycleId} en el servei seleccionat.</p>;
+    }
+
     return (
         <div>
-            <h3 className="text-xl font-ultrabold mb-2">Detalls del Cicle: {cycleId}</h3>
-            {trainNum && <p className="mb-4 p-4 bg-gray-100 rounded-lg"><strong>Tren Assignat:</strong> {trainNum}</p>}
-            <h4 className="text-lg font-ultrabold mb-2">Circulacions en aquest cicle:</h4>
-            <ul className="space-y-3">
-                {circulations.map(circ => (
-                     <li key={circ.id} className="p-3 bg-gray-50 rounded-lg shadow-sm flex justify-between items-center">
-                        <div>
-                            <p className="font-bold">{circ.id}</p>
-                            <p className="text-sm text-gray-600">{circ.inici} ({circ.sortida}) &rarr; {circ.final} ({circ.arribada})</p>
+            <div className="text-center pb-4 border-b-2 border-gray-200 mb-6">
+                <p className="text-sm text-gray-500">Cicle</p>
+                <h2 className="text-2xl font-ultrabold text-[#58595b]">{cycleId}</h2>
+            </div>
+
+            {trainNum && (
+                <div className="mb-6 bg-gray-100 p-3 rounded-lg text-center shadow-sm">
+                    <p className="text-sm text-gray-500 font-bold">Tren Assignat</p>
+                    {trainPhone ? (
+                        <a href={`tel:${trainPhone}`} className="text-blue-600 hover:underline font-ultrabold text-lg inline-flex items-center justify-center group">
+                            <PhoneIcon /> {trainNum}
+                        </a>
+                    ) : <p className="text-lg font-ultrabold">{trainNum}</p>}
+                </div>
+            )}
+            
+            <h3 className="text-xl font-ultrabold mb-3">Circulacions del Cicle</h3>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="hidden md:grid grid-cols-[1fr,1fr,96px,96px,128px,192px] text-xs font-bold text-gray-500 uppercase bg-gray-100">
+                    <div className="p-3 text-left">Circulació</div>
+                    <div className="p-3 text-center">Torn</div>
+                    <div className="p-3 text-center">Sortida</div>
+                    <div className="p-3 text-center">Arribada</div>
+                    <div className="p-3 text-center">Tren</div>
+                    <div className="p-3 text-center">Llibre d'Itineraris</div>
+                </div>
+                <div>
+                    {circulationsWithShifts.map(({ circulation, shift }) => (
+                        <div key={circulation.id} className="border-t border-gray-200 bg-white">
+                             {/* --- MOBILE VIEW --- */}
+                            <div className="p-4 md:hidden">
+                                <p className="font-ultrabold text-lg text-[#58595b] mb-3">{circulation.id}</p>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                    <div>
+                                        <p className="text-gray-500 font-bold">Torn</p>
+                                        <p className="font-normal">{shift.id}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 font-bold">Tren</p>
+                                        <span className={trainNum ? "font-semibold" : "text-gray-400"}>{trainNum || '-'}</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 font-bold">Sortida</p>
+                                        <p className="font-normal">{circulation.sortida}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 font-bold">Arribada</p>
+                                        <p className="font-normal">{circulation.arribada}</p>
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                     <button 
+                                        onClick={() => showPassingTimes(circulation.id)} 
+                                        className="bg-white text-xs w-full text-[#58595b] font-ultrabold py-2 px-3 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50 flex items-center justify-center">
+                                       <BookIcon /> Llibre d'Itineraris
+                                    </button>
+                                </div>
+                            </div>
+                            {/* --- DESKTOP VIEW --- */}
+                            <div className="hidden md:grid grid-cols-[1fr,1fr,96px,96px,128px,192px] items-center p-3">
+                                <div className="font-ultrabold text-lg text-[#58595b]">{circulation.id}</div>
+                                <div className="text-center text-sm font-semibold">{shift.id}</div>
+                                <div className="text-center">{circulation.sortida}</div>
+                                <div className="text-center">{circulation.arribada}</div>
+                                <div className="text-center font-semibold">{trainNum || <span className="text-gray-400">-</span>}</div>
+                                <div className="flex justify-center">
+                                    <button 
+                                        onClick={() => showPassingTimes(circulation.id)} 
+                                        className="bg-white text-xs w-auto text-[#58595b] font-ultrabold py-2 px-3 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50 flex items-center justify-center">
+                                       <BookIcon /> Llibre d'Itineraris
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <button onClick={() => showPassingTimes(circ.id)} className="bg-white text-xs text-[#58595b] font-ultrabold py-1 px-2 rounded-md shadow-sm border border-[#99cc33] hover:bg-gray-50">
-                            Veure Horari
-                        </button>
-                    </li>
-                ))}
-            </ul>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 };
@@ -1628,6 +1731,52 @@ const PresenceBar: React.FC<PresenceBarProps> = ({ durationMinutes, startOffsetM
     );
 };
 
+interface TimelineAxisProps {
+    startMinutes: number;
+    endMinutes: number;
+}
+const TimelineAxis: React.FC<TimelineAxisProps> = ({ startMinutes, endMinutes }) => {
+    const duration = endMinutes - startMinutes;
+    if (duration <= 0) {
+        return (
+             <div className="flex justify-between text-xs mt-1 px-2">
+                <span>{minutesToTime(startMinutes)}</span>
+                <span>{minutesToTime(endMinutes)}</span>
+            </div>
+        );
+    }
+
+    const firstHour = Math.ceil(startMinutes / 60) * 60;
+    const lastHour = Math.floor(endMinutes / 60) * 60;
+
+    const hourlyMarkers = [];
+    for (let m = firstHour; m <= lastHour; m += 60) {
+        const position = ((m - startMinutes) / duration) * 100;
+        if (position > 1 && position < 99) { // Avoid cluttering start/end
+            hourlyMarkers.push({
+                minutes: m,
+                style: { left: `${position}%` }
+            });
+        }
+    }
+    
+    return (
+        <div className="relative h-6 mt-1 px-2">
+            <div className="flex justify-between text-xs absolute w-full">
+                 <span>{minutesToTime(startMinutes)}</span>
+                 <span>{minutesToTime(endMinutes)}</span>
+            </div>
+            {hourlyMarkers.map(marker => (
+                <div key={marker.minutes} className="absolute h-full text-center" style={marker.style}>
+                    <div className="w-px h-2 bg-gray-400 mx-auto"></div>
+                    <div className="text-xs text-gray-500 transform -translate-x-1/2">{minutesToTime(marker.minutes)}</div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+
 interface ComparisonResultViewProps {
     data: ComparisonResultData;
     db: Db;
@@ -1716,10 +1865,7 @@ const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db })
                         Torn {shift2.id}
                     </PresenceBar>
                  </div>
-                 <div className="flex justify-between text-xs mt-1 px-2">
-                    <span>{minutesToTime(overallStart)}</span>
-                    <span>{minutesToTime(overallEnd)}</span>
-                </div>
+                 <TimelineAxis startMinutes={overallStart} endMinutes={overallEnd} />
             </div>
             
              <div>
@@ -1761,10 +1907,7 @@ const ComparisonResultView: React.FC<ComparisonResultViewProps> = ({ data, db })
                         </PresenceBar> );
                     })}
                 </div>
-                <div className="flex justify-between text-xs mt-1 px-2">
-                    <span>{minutesToTime(overallStart)}</span>
-                    <span>{minutesToTime(overallEnd)}</span>
-                </div>
+                 <TimelineAxis startMinutes={overallStart} endMinutes={overallEnd} />
                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm">
                     <div className="flex items-center space-x-2"><span className="w-3 h-3 bg-[#60a5fa] rounded-sm opacity-50"></span><span>Torn {shift1.id}</span></div>
                     <div className="flex items-center space-x-2"><span className="w-3 h-3 bg-[#4ade80] rounded-sm opacity-50"></span><span>Torn {shift2.id}</span></div>
